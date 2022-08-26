@@ -1,0 +1,303 @@
+---
+title: "LBB_RM"
+author: "Fikri K Rizal"
+date: "2022-08-22"
+output:
+  html_document:
+    df_print: paged
+    highlight: tango
+    theme: cosmo
+    toc: yes
+    toc_float:
+      collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Tingkat Kejahatan di suatu daerah, dipengaruhi oleh banyak faktor. Berikut adalah analisisi Tingkat Kejahatan di US berdasarkan beberapa variable sosio-demografi. 
+
+Menggunakan Analisis Regresi Linier untuk menganalisis dan memprediksi Tingkat Kejahatan, sehingga bisa mengurangi Tingkat Kejahatan dengan memperbaiki variabel-variabel yang memiliki pengaruh signifikan.
+
+# **Data Preparation**
+
+## **Load Library yang dibutuhkan**
+
+```{r}
+library(GGally)
+library(lmtest)
+library(car)
+library(dplyr)
+library(MLmetrics)
+```
+
+## **Load dataset**
+
+```{r}
+crime <- read.csv("Data Input/crime.csv")
+```
+
+Berikut adalah keterangan dari setiap kolom:
+
+- `percent_m`: Persentase laki-laki berusia 14-24
+- `is_south`: Apakah berada di negara bagian selatan? 1 untuk Iya, 0 untuk Tidak.  
+- `mean_education`: Rata-rata tahun sekolah  
+- `police_exp60`: Pengeluaran polisi pada tahun 1960  
+- `police_exp59`: Pengeluaran polisi pada tahun 1959
+- `labour_participation`: Tingkat partisipasi kerja  
+- `m_per1000f`: Jumlah laki-laki dibandingkan setiap 1000 perempuan  
+- `state_pop`: Populasi negara bagian  
+- `nonwhites_per1000`: Jumlah penduduk non-kulit putih per 1000 orang  
+- `unemploy_m24`: Tingkat pengangguran laki-laki perkotaan berusia 14-24  
+- `unemploy_m39`: Tingkat pengangguran laki-laki perkotaan berusia 35-39  
+- `gdp`: Gross domestic product per kepala  
+- `inequality`: Ketimpangan pendapatan  
+- `prob_prison`: Kemungkinan dipenjara  
+- `time_prison`: Rata-rata waktu menjalani hukuman di Penjara  
+- `crime_rate`: Tingkat kejahatan dalam kategori yang tidak ditentukan
+
+## **Explanatory Data Analysis**
+
+### **Cek Data**
+
+```{r}
+glimpse(crime)
+```
+
+### **Mengubah Tipe Data**
+
+```{r}
+crime <- crime %>% 
+  mutate(is_south = as.factor(is_south))
+glimpse(crime)
+```
+
+### **Cek Missing Value**
+
+```{r}
+sum(is.na(crime))
+```
+
+Karena tidak ada missing value, maka bisa dilanjutkan ke tahapan selanjutnya.
+
+### **Cek Korelasi antar Variabel**
+
+```{r}
+ggcorr(crime, label = TRUE, hjust = 1, layout.exp = 2)
+```
+
+Dari grafik korelasi diatas, variabel-variabel yang ada, memiliki pengaruh positif dan negatif terhadap *crime_rate*. Untuk variabel *police_exp59* dan *police_exp60* memiliki korelasi paling tinggi diantara yang lain dan variabel *nonwhites_per1000* bisa dikatakan tidak memiliki korelasi sama sekali. Akan tetapi dari variabel *police_exp59* dan *police_exp60* keduanya memiliki korelasi yang sangat kuat, maka cukup diambil salah satu dari kedua variabel tersebut.
+
+```{r}
+crime <- crime %>% 
+  select(-police_exp59)
+
+ggcorr(crime, label = TRUE, hjust = 1, layout.exp = 2)
+```
+
+
+# **Pembuatan Model Regresi Linear**
+
+Tahapan selanjutnya adalah pembuatan model regresi linear dengan variabel-variabel prediktor yang ada. Model yang dibuat terdiri dari beberapa model yang menggunakan prediktor berbeda.
+
+## **Model dengan 1 Prediktor**
+
+Untuk membuat model dengan 1 prediktor, kita gunakan variabel dengan korelasi paling tinggi dan yang dipakai adalah variabel *police_exp60*.
+
+```{r}
+m1 <- lm(crime_rate~police_exp60, crime)
+m1
+```
+
+```{r}
+summary(m1)
+```
+
+```{r}
+plot(crime$police_exp60, crime$crime_rate)
+abline(m1$coefficients[1],m1$coefficients[2], col="red")
+```
+
+Dari model diatas, dapat dilihat nilai adjuster R-squared adalah 0.4611.
+
+## **Model dengan Semua Variable Prediktor**
+
+Dari model pertama, nilai dari ajusted R-squared masih cukup rendah, sehingga diperlukan model lain untuk mendapat nilai adjusted R-squared yang lebih baik.
+
+```{r}
+m2 <- lm(crime_rate ~ ., crime)
+m2
+```
+
+```{r}
+summary(m2)
+```
+
+Dari model menggunakan semua variabel prediktor, diperoleh nilai adjuster R-squared yang lebih baik yaitu 0.709.
+
+## **Model dengan Menggunakan Step-Wise *backward***
+
+Model dengan semua variabel prediktor memang lebih baik dibandingkan dengan 1 variabel prediktor, akan tetapi perlu dipastikan juga model lain yang mungkin memiliki adjusted R-squared yang lebih baik.
+
+```{r}
+m_step <- step(m2, direction = "backward")
+m_step
+```
+
+```{r}
+summary(m_step)
+```
+
+Dengan menggunakan metode step-wise regression, kita dapat memperoleh model terbaik berdasarkan nilai AIC yang paling rendah. 
+
+Dari ketiga model yang telah dibuat, nilai adjusted R dari model yang menggunakan step-wise reggresion memberikan nilai paling besar yaitu 0.7444 dibandingkan 0.4611 pada model 1 prediktor dan 0.709 pada model dengan semua prediktor.
+
+# **Evaluasi Model**
+
+Dari ketiga model yang telah dibuat, kita akan membandingkan 2 model *m2* dan *m_step*.
+
+```{r}
+data_eval <- data.frame(aktual = crime$crime_rate, pred_m1 = m1$fitted.values, pred_m_step = m_step$fitted.values)
+```
+
+## **Mean Absolute Error (MAE)**
+
+MAE dari model m1
+
+```{r}
+MAE(y_pred = data_eval$pred_m1 , y_true = data_eval$aktual)
+```
+
+MAE dari model m_step
+
+```{r}
+MAE(y_pred = data_eval$pred_m_step , y_true = data_eval$aktual)
+```
+
+Dari kedua MAE yang telah dihitung, MAE model *m_step* lebih kecil dibandingkan model *m1*, akan tetapi kita tetap perlu membandingkan dengan range dari variabel target.
+
+```{r}
+range(crime$crime_rate)
+```
+
+## **Mean Absolute Percentage Error (MAPE)**
+
+MAPE dari model m1
+
+```{r}
+MAPE(y_pred = data_eval$pred_m1 , y_true = data_eval$aktual)*100
+```
+
+MAPE dari model m_step
+
+```{r}
+MAPE(y_pred = data_eval$pred_m_step , y_true = data_eval$aktual)*100
+```
+
+## **Mean Squared Error (MSE)**
+
+MSE dari model m1
+
+```{r}
+MSE(y_pred = data_eval$pred_m1 , y_true = data_eval$aktual)
+```
+
+MSE dari model m_step
+
+```{r}
+MSE(y_pred = data_eval$pred_m_step , y_true = data_eval$aktual)
+```
+
+## **Root Mean Squared Error (RMSE)**
+
+RMSE dari model m1
+
+```{r}
+RMSE(y_pred = data_eval$pred_m1 , y_true = data_eval$aktual)
+```
+
+RMSE dari model m_step
+
+```{r}
+RMSE(y_pred = data_eval$pred_m_step , y_true = data_eval$aktual)
+```
+
+Dari semua perhitungan error, model *m_step* memiliki error yang lebih kecil dibandingkan model *m1*
+
+# **Uji Asumsi**
+
+Dari evaluasi yang telah dilakukan, maka model *m_step* merupakan model terbaik yang bisa diperoleh. Akan tetap perlu dilakukan uji asumsi untuk memastikan bahwa model *m_step* memenuhi **Best Linear Unbiased Estimator (BLUE) model**.
+
+## **Normality of Residuals** 
+
+### Visualisasi histogram residual
+
+```{r}
+hist(m_step$residuals)
+```
+
+### Uji statistik
+
+Shapiro-Wilk hypothesis test:
+
+* H0: error berdistribusi normal
+* H1: error TIDAK berdistribusi normal
+
+> Kondisi yang diharapkan: H0
+
+```{r}
+shapiro.test(m_step$residuals)
+```
+
+Nilai p-value > 0.05. Sehingga gagal tolak H0, disimpulkan bahwa residual dari model *m_step* sudah berdistribusi normal. Asumsi normality terpenuhi.
+
+## **Homoscedasticity of Residuals**
+
+### Visualisasi scatter plot: `fitted.values` vs `residuals`
+
+```{r}
+plot(m_step$fitted.values, m_step$residuals)
+abline(h=0, col="red")
+```
+
+
+### Uji statistik
+
+Breusch-Pagan hypothesis test:
+
+* H0: error menyebar konstan atau homoscedasticity
+* H1: error menyebar TIDAK konstan atau heteroscedasticity
+
+> Kondisi yang diharapkan: H0
+
+```{r}
+bptest(m_step)
+```
+
+Dari pengujian di atas, diketahui nilai p-value > 0.05. Sehingga gagal tolak H0, disimpulkan bahwa residual *m_step* sudah memenuhi asumsi homoskedastisitas.
+
+## **No Multicollinearity**
+
+Uji VIF (Variance Inflation Factor):
+* nilai VIF > 10: terjadi multicollinearity pada model
+* nilai VIF < 10: tidak terjadi multicollinearity pada model
+
+```{r}
+vif(m_step)
+```
+
+Dari nilai VIF di atas, dihasilkan nilai VIF <10 untuk keseluruhan variabel prediktor, sehingga asumsi no multicollinearity terpenuhi
+
+Dari uji asumsi yang telah dilakukan, model *m_step* mememnuhi semua uji asumsi. Oleh karena itu model *m_step* merupakan model yang baik untuk digunakan,
+
+# **Kesimpulan dan Saran**
+
+```{r}
+summary(m_step)$call
+```
+
+Dari model *m_step* yang telah dibuat, bisa dilihat variabel-variabel yang mempengaruhi Tingkat Kejahatan yang terjadi. Diharapkan nilai-nilai pada variabel prediktor tersebut diperbaiki, sehingga bisa menekan angka tingkat kejahatan yang terjadi.
+
+
+
